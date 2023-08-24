@@ -1,0 +1,87 @@
+include "stack.skh";
+
+
+/* --- Output Language --- */
+
+struct Ins {
+  int op;
+  int arg;
+}
+
+int OP_PUSH = 0;
+int OP_CALC = 1;
+int OP_PULL = 2;
+
+int ops(int sel, int x, int y) {
+  if (sel == 0) return x + y;
+  else if (sel == 1) return x - y;
+  else if (sel == 2) return x * y;
+  else if (sel == 3) return x / y;
+  else if (sel == 4) return x % y;
+  else return 0;
+}
+
+Stack<int> binop(int sel, Stack<int> s) {
+  int arg0 = peek(s);
+  s = pop(s);
+  int arg1 = peek(s);
+  s = pop(s);
+  return push(s, ops(sel, arg0, arg1));
+}
+
+int pull(Stack<int> s, int idx) {
+  while (idx > 0) { s = pop(s); idx--; }
+  return peek(s);
+}
+
+/* Executes a sequence of stack operations */
+int execute([int n], Ins[n] code) {
+  Stack<int> s = Empty@stack();
+
+  for (int i = 0; i < n; i++) {
+    Ins ins = code[i];
+    if (ins.op == OP_PUSH) s = push(s, ins.arg);
+    else if (ins.op == OP_CALC) s = binop(ins.arg, s);
+    else if (ins.op == OP_PULL) s = push(s, pull(s, ins.arg));
+  }
+
+  return peek(s);
+}
+
+/* Input Language */
+
+struct Ast {
+  int kind;
+  int val;
+  int n;
+  Ast[n] subtrees;
+}
+
+int KIND_CONST = 0;
+int KIND_VAR = 1;
+int KIND_BINOP = 2;
+
+struct Vars {
+  int x; int y; int z;
+}
+
+int eval(Ast ast, Vars vars) {
+  if (ast.kind == KIND_CONST) return ast.val;
+  else if (ast.kind == KIND_VAR) return { vars.x, vars.y, vars.z }[ast.val];
+  else if (ast.kind == KIND_BINOP) return ops(ast.val, eval(ast.subtrees[0], vars), 
+                                                       eval(ast.subtrees[1], vars));
+}
+  
+
+
+
+struct Llcode {
+  int n;
+  Ins[n] code;
+}
+
+Llcode compiler(Ast ast) {
+  return new Llcode(n=0);
+}
+
+

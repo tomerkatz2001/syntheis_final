@@ -1,0 +1,15 @@
+{
+
+    "terminal.integrated.env.windows": {
+        "PYTHONPATH": "/home/tomer/synthesis/techcs-236347/final/ex3/lib;/home/tomer/synthesis/techcs-236347/final/ex3/src",
+    },
+    "python.analysis.extraPaths": [
+        "./src",
+        "./lib"
+    ],
+    "python.autoComplete.extraPaths": [
+        "/home/tomer/synthesis/techcs-236347/final/ex3/lib",
+        "/home/tomer/synthesis/techcs-236347/final/ex3/src",
+
+    ]
+}

@@ -1,0 +1,24 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        /* This configuration runs the file from the current editor. */
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "stopOnEntry": true,
+            "python": "${command:python.interpreterPath}",
+            "program": "${file}",
+            "cwd": "${workspaceFolder}",
+            "env": {"PYTHONPATH": "lib;src"},
+            "envFile": "${workspaceFolder}/.env",
+            "console": "internalConsole",
+            "debugOptions": [
+                "RedirectOutput"
+            ]
+        }
+    ]
+}
