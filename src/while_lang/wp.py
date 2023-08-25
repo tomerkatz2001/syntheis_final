@@ -2,7 +2,22 @@ from while_lang.syntax import WhileParser
 import adt.tree
 import operator
 from z3 import Int, ForAll, Implies, Not, And, Or, Solver, unsat, sat
+from copy import copy, deepcopy
+from functools import partial
+from itertools import product
 
+class LazyDict(dict):
+    def __init__(self, *args, **kwds) -> None:
+        super().__init__(*args, **kwds)
+
+    def __getitem__(self, __key):
+        ret = super().__getitem__(__key)
+        
+        if callable(ret):
+            ret = ret(self)
+            self[__key] = ret
+            return ret
+        return ret
 
 OP = {'+': operator.add, '-': operator.sub,
       '*': operator.mul, '/': operator.floordiv,
@@ -13,11 +28,11 @@ OP = {'+': operator.add, '-': operator.sub,
     
 
 def mk_env(pvars):
-    return {v : Int(v) for v in pvars}
+    return LazyDict({v : Int(v) for v in pvars})
 
 
 def upd(d, k, v):
-    d = d.copy()
+    d = copy(d)
     d[k] = v
     return d
 
@@ -180,24 +195,71 @@ def preProcess(ast):
     return ast
 
 
+def find_sol(P, ast, Q, linv, env, original_names):
+    wp = get_wp(ast, Q, linv)
+    sol = solve([ForAll([env[ n] for n in original_names], Implies(P(env), wp(env)))])
+    return sol
+
+def create_first_phase(orig_names,hole_names,i):
+    f= lambda name, e: e[name]
+    possible_hole_expr = []
+    for hole_name in hole_names:
+        possible_hole_expr.append([partial(f,name) for name in orig_names] + [lambda e: Int(f'{hole_name}_{i}')])
+    return tuple(product(*possible_hole_expr))
+
+def create_next_phase(past_phase, orig_names, hole_name, phase_num):
+    phase = []
+    for vals1 in past_phase:
+        for vals2 in create_first_phase(orig_names, hole_name, phase_num):
+            phase.append(tuple(map(lambda vals:
+                                   partial(lambda val1, val2, e:val1(e) + val2(e),vals[0],vals[1]), 
+                                   zip(vals1, vals2)))
+                )
+            phase.append(tuple(map(lambda vals:
+                                   partial(lambda val1, val2, e:val1(e) -val2(e),vals[0],vals[1]), 
+                                   zip(vals1, vals2)))
+                )
+            phase.append(tuple(map(lambda vals:
+                                   partial(lambda val1, val2, e:val1(e) * val2(e),vals[0],vals[1]), 
+                                   zip(vals1, vals2)))
+                )
+            
+            # phase.append(partial(lambda val1, val2, e:val1(e) / val2(e),val1,val2))
+    return phase
+
 def gen_holes(P, ast, Q, linv):
     
     original_names = find_all_vars(ast)
-    names = []
-    ast = find_and_replace_holes(ast, names)
+    hole_names = []
+    ast = find_and_replace_holes(ast, hole_names)
     ast = preProcess(ast)
-    env = mk_env(find_all_vars(ast))
+    env = mk_env(find_all_vars(original_names+hole_names))
+    sol = None
+
     
-    wp = get_wp(ast, Q, linv)
-    print(wp(env))
-    sol = solve([ForAll([env[n] for n in original_names], Implies(P(env), wp(env)))])
+    current_phase = create_first_phase(original_names,hole_names,0)
+    i = 0
+    phase_num = 0
+    while sol is None:
+        if i == len(current_phase):
+            i=0
+            phase_num += 1
+            current_phase = create_next_phase(current_phase, original_names,hole_names, phase_num)
+        env = mk_env(original_names+hole_names)
+        for hole, val in zip(hole_names,current_phase[i]):
+            env[hole] = val
+        sol = find_sol(P, ast, Q, linv, env, original_names)
+        i+=1   
+    for hole in hole_names:
+        print(f'\n{hole} = {sol.eval(env[hole])}\n')
     if sol is not None:
         print("there is an assignment:")
         print(sol)
-        return replace_holes_with_sol(ast, names, sol, env)
+        return replace_holes_with_sol(ast, hole_names, sol, env)
     else:
         print("i cant fill your holes")
         return False
+
     
     
 
