@@ -30,6 +30,9 @@ OP = {'+': operator.add, '-': operator.sub,
 def mk_env(pvars):
     return LazyDict({v : Int(v) for v in pvars})
 
+def getVars(program:str):
+    ast = WhileParser()(program)
+    return find_all_vars(ast)
 
 def upd(d, k, v):
     d = copy(d)
@@ -260,7 +263,9 @@ def gen_holes(P, ast, Q, linv):
         print("i cant fill your holes")
         return False
 
-    
+def synthesize(program, inputs, outputs):
+    return "sol"
+
     
 
 
