@@ -20,7 +20,7 @@ class LazyDict(dict):
         return ret
 
 OP = {'+': operator.add, '-': operator.sub,
-      '*': operator.mul, '/': operator.floordiv,
+      '*': operator.mul, '/': operator.truediv,
       '!=': operator.ne, '>': operator.gt, '<': operator.lt,
       '<=': operator.le, '>=': operator.ge, '=': operator.eq}
 
@@ -65,11 +65,16 @@ def solve(formulas):
     
 def encode_expr(ast, env):
     if ast.root == 'id':
-        return env[ast.subtrees[0].root]
+        return env[ast.subtrees[0].root] , True
     elif ast.root == 'num':
-        return ast.subtrees[0].root
+        return ast.subtrees[0].root , True
     elif ast.root in OP:
-        return OP[ast.root](encode_expr(ast.subtrees[0], env), encode_expr(ast.subtrees[1], env))
+        left_expr, zero_div_cond1 = encode_expr(ast.subtrees[0], env)
+        right_expr, zero_div_cond2 = encode_expr(ast.subtrees[1], env)
+        zero_div_cond = And(zero_div_cond2, zero_div_cond1)
+        if '/' == ast.root:
+            zero_div_cond=And(zero_div_cond, right_expr != 0)
+        return OP[ast.root](left_expr, right_expr), zero_div_cond
     else:
         raise SyntaxError
 
@@ -88,16 +93,16 @@ def get_wp(ast, Q, linv):
         def assignment_lambda(e):
             var_name = ast.subtrees[0].subtrees[0].root
             right = ast.subtrees[1]
-            expr = encode_expr(right, e)
-            return  Q(upd(e, var_name, expr))
+            expr, zero_div = encode_expr(right, e)
+            return  And(zero_div,Q(upd(e, var_name, expr)))
         return assignment_lambda
     
     elif ast.root == 'if':
         def if_lambda(e):
             wp_then = get_wp(ast.subtrees[1], Q, linv)
             wp_else = get_wp(ast.subtrees[2], Q, linv)
-            cond  = encode_expr(ast.subtrees[0], e)
-            return Or(And(cond, wp_then(e)), And(Not(cond),wp_else(e)))
+            cond, zero_div  = encode_expr(ast.subtrees[0], e)
+            return And(zero_div,Or(And(cond, wp_then(e)), And(Not(cond),wp_else(e))))
         return if_lambda
     
     elif ast.root == 'while':
@@ -108,18 +113,24 @@ def get_wp(ast, Q, linv):
             for var in unassigned_vars:
                 new_env = upd(new_env, var, e[var])
             wp = get_wp(ast.subtrees[1], linv, linv)
-            cond = encode_expr(ast.subtrees[0], new_env)
-            first_cond = encode_expr(ast.subtrees[0], e)
-            return And(Implies(first_cond,And(linv(e), ForAll([new_env[v] for v in get_assigned_vars(ast)],
-                                       And(Implies(And(linv(new_env), cond), wp(new_env)),
-                                           Implies(And(linv(new_env), Not(cond)), Q(new_env)))
+            cond, zero_div = encode_expr(ast.subtrees[0], new_env)
+            first_cond, first_zero_div = encode_expr(ast.subtrees[0], e)
+            return And(Implies(first_cond,And(linv(e), 
+                                              ForAll([new_env[v] for v in get_assigned_vars(ast)],
+                                                    And(
+                                                        Implies(And(linv(new_env), cond), wp(new_env)),
+                                                        Implies(And(linv(new_env), Not(cond)), Q(new_env)),
+                                                        Implies(linv(new_env), zero_div)
+                                                        )
                                        ))),
-                    Implies(Not(first_cond), Q(e)))
+                    Implies(Not(first_cond), Q(e)),
+                    first_zero_div)
         return lambda_while
     
     elif ast.root == 'assert':
         def lambda_assert(e):
-            return And(encode_expr(ast.subtrees[0], e), Q(e))
+            expr, zero_div = encode_expr(ast.subtrees[0], e)
+            return And(zero_div, expr, Q(e))
         return lambda_assert
     
     
@@ -226,7 +237,10 @@ def create_next_phase(past_phase, orig_names, hole_name, phase_num):
                                    partial(lambda val1, val2, e:val1(e) * val2(e),vals[0],vals[1]), 
                                    zip(vals1, vals2)))
                 )
-            
+            phase.append(tuple(map(lambda vals:
+                                   partial(lambda val1, val2, e:val1(e) / val2(e),vals[0],vals[1]), 
+                                   zip(vals1, vals2)))
+                )
             # phase.append(partial(lambda val1, val2, e:val1(e) / val2(e),val1,val2))
     return phase
 
@@ -236,7 +250,7 @@ def gen_holes(P, ast, Q, linv):
     hole_names = []
     ast = find_and_replace_holes(ast, hole_names)
     ast = preProcess(ast)
-    env = mk_env(find_all_vars(original_names+hole_names))
+    env = mk_env(original_names+hole_names)
     sol = None
 
     
@@ -282,9 +296,11 @@ if __name__ == '__main__':
     assert n <= 0;
     assert a = 1
     '''
-    
-    
-    "a := (b + 1) + ?? "
+
+    program = '''
+    a := ?? ;
+    assert a = (b / 2 )
+    '''
     P = lambda d: True
     Q = lambda d: True
     linv = lambda d: True
