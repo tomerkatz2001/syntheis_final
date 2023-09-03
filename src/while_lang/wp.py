@@ -24,8 +24,8 @@ OP = {'+': operator.add, '-': operator.sub,
       '!=': operator.ne, '>': operator.gt, '<': operator.lt,
       '<=': operator.le, '>=': operator.ge, '=': operator.eq}
 
-
-    
+#  so ugly
+generated_div_non_zero_div_cond = [True]
 
 def mk_env(pvars):
     return LazyDict({v : Int(v) for v in pvars})
@@ -64,8 +64,10 @@ def solve(formulas):
         return s.model()
     
 def encode_expr(ast, env):
+    global generated_div_non_zero_div_cond 
     if ast.root == 'id':
-        return env[ast.subtrees[0].root] , True
+        generated_div_non_zero_div_cond[0] = True
+        return env[ast.subtrees[0].root] , generated_div_non_zero_div_cond[0]
     elif ast.root == 'num':
         return ast.subtrees[0].root , True
     elif ast.root in OP:
@@ -221,6 +223,12 @@ def create_first_phase(orig_names,hole_names,i):
         possible_hole_expr.append([partial(f,name) for name in orig_names] + [lambda e: Int(f'{hole_name}_{i}')])
     return tuple(product(*possible_hole_expr))
 
+def div_phase(val1, val2, e):
+    global generated_div_non_zero_div_cond
+    under = val2(e)
+    generated_div_non_zero_div_cond[0] = And(under != 0, generated_div_non_zero_div_cond[0])
+    return val1(e) / val2(e)
+
 def create_next_phase(past_phase, orig_names, hole_name, phase_num):
     phase = []
     for vals1 in past_phase:
@@ -238,7 +246,7 @@ def create_next_phase(past_phase, orig_names, hole_name, phase_num):
                                    zip(vals1, vals2)))
                 )
             phase.append(tuple(map(lambda vals:
-                                   partial(lambda val1, val2, e:val1(e) / val2(e),vals[0],vals[1]), 
+                                   partial(div_phase,vals[0],vals[1]), 
                                    zip(vals1, vals2)))
                 )
             # phase.append(partial(lambda val1, val2, e:val1(e) / val2(e),val1,val2))
@@ -299,9 +307,9 @@ if __name__ == '__main__':
 
     program = '''
     a := ?? ;
-    assert a = (b / 2 )
+    assert a = (10 / c )
     '''
-    P = lambda d: True
+    P = lambda d: d['c'] != 0
     Q = lambda d: True
     linv = lambda d: True
 
