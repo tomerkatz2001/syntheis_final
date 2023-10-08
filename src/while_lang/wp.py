@@ -138,6 +138,8 @@ def get_wp(ast, Q, linv):
         return lambda_assert
 
 
+
+
 def verify(P, ast, Q, linv=None):
     """
     Verifies a Hoare triple {P} c {Q}
@@ -179,7 +181,7 @@ def find_and_replace_holes(tree, new_names: list):
 def replace_holes_with_sol(program, hole_names, sol, env):
     # Input string and list
     replacement_list = [str(sol.eval(env[hole])) for hole in hole_names]
-
+    replacement_list = ['0' if x.startswith("hole") else x for x in replacement_list] # default value for all unbonded holes
     # Use string formatting to replace "??" with list values
     fixed_program = program.replace("??", "{}").format(*replacement_list)
     print(fixed_program)
@@ -249,7 +251,7 @@ def create_next_phase(past_phase, orig_names, hole_name, phase_num):
     return phase
 
 
-def gen_holes(P, ast, Q, linv, program):
+def gen_holes(P, ast, Q, linv, program, withExprs = True):
     original_names = find_all_vars(ast)
     hole_names = []
     ast = find_and_replace_holes(ast, hole_names)
@@ -260,16 +262,25 @@ def gen_holes(P, ast, Q, linv, program):
     current_phase = create_first_phase(original_names, hole_names, 0)
     i = 0
     phase_num = 0
-    while sol is None:
-        if i == len(current_phase):
-            i = 0
-            phase_num += 1
-            current_phase = create_next_phase(current_phase, original_names, hole_names, phase_num)
+    while sol is None and phase_num < 10:
         env = mk_env(original_names + hole_names)
-        for hole, val in zip(hole_names, current_phase[i]):
-            env[hole] = val
+        if withExprs:
+            if i == len(current_phase):
+                i = 0
+                phase_num += 1
+                current_phase = create_next_phase(current_phase, original_names, hole_names, phase_num)
+
+            for hole, val in zip(hole_names, current_phase[i]):
+                env[hole] = val
+
         sol = find_sol(P, ast, Q, linv, env, original_names)
         i += 1
+        if not withExprs: # if no expr and sol not found on first time there is no sol
+            break
+    if sol is None and withExprs:
+        return "timeout"
+    if sol is None and not withExprs:
+        return "solution can't be found"
     for hole in hole_names:
         print(f'\n{hole} = {sol.eval(env[hole])}\n')
     if sol is not None:
@@ -281,19 +292,27 @@ def gen_holes(P, ast, Q, linv, program):
         return False
 
 
-def synthesize(program, inputs, outputs):
-    print(f'{program=}')
-    print(f'{inputs=}')
-    print(f'{outputs=}')
+def synthesize(program, inputs, outputs, withExprs = True):
     P = lambda d: And(*[d[k] == v for k, v in inputs.items()])
     Q = lambda d: And(*[d[k] == v for k, v in outputs.items()])
     linv = lambda d: True
 
     ast = WhileParser()(program)
     P({"x":3})
-    fixed_program = gen_holes(P, ast, Q, linv, program)
+    fixed_program = gen_holes(P, ast, Q, linv, program, withExprs)
     return fixed_program
 
+def synthesizeAndVerify(program, inputs, outputs, P, Q, linv, withExprs = True):
+    inp = lambda d: And(*[d[k] == v for k, v in inputs.items()])
+    out = lambda d: And(*[d[k] == v for k, v in outputs.items()])
+    ast = WhileParser()(program)
+    inp({"x": 3})
+    fixed_program = gen_holes(inp, ast, out, linv, program, withExprs)
+    new_ast = WhileParser()(fixed_program)
+    if new_ast:
+        verify_result = verify(P, new_ast, Q, linv=linv)
+        return (fixed_program, verify_result)
+    return (fixed_program, False)
 
 
 
