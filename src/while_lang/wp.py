@@ -1,3 +1,4 @@
+import multiprocessing
 from while_lang.syntax import WhileParser
 import adt.tree
 import operator
@@ -6,43 +7,52 @@ from copy import copy, deepcopy
 from functools import partial
 from itertools import product
 
+
+def signal_handler(signum, frame):
+    raise Exception("Timed out!")
+
 class LazyDict(dict):
     def __init__(self, *args, **kwds) -> None:
         super().__init__(*args, **kwds)
 
     def __getitem__(self, __key):
         ret = super().__getitem__(__key)
-        
+
         if callable(ret):
             ret = ret(self)
             self[__key] = ret
             return ret
         return ret
 
+
 OP = {'+': operator.add, '-': operator.sub,
       '*': operator.mul, '/': operator.truediv,
       '!=': operator.ne, '>': operator.gt, '<': operator.lt,
       '<=': operator.le, '>=': operator.ge, '=': operator.eq}
 
-#  so ugly
+
 generated_div_non_zero_div_cond = [True]
 
-def mk_env(pvars):
-    return LazyDict({v : Int(v) for v in pvars})
 
-def getVars(program:str):
+def mk_env(pvars):
+    return LazyDict({v: Int(v) for v in pvars})
+
+
+def getVars(program: str):
     ast = WhileParser()(program)
     return find_all_vars(ast)
+
 
 def upd(d, k, v):
     d = copy(d)
     d[k] = v
     return d
 
+
 def get_assigned_vars(ast):
     assignedVars = []
     if ast.root == ':=':
-        return ast.subtrees[0].subtrees[0].root #varName
+        return ast.subtrees[0].subtrees[0].root  # varName
     else:
         for sub_ast in ast.subtrees:
             assignedVars += get_assigned_vars(sub_ast)
@@ -52,17 +62,19 @@ def get_assigned_vars(ast):
 def find_all_vars(ast):
     sons_vars = []
     if ast.root == 'id':
-        return  [ast.subtrees[0].root]
+        return [ast.subtrees[0].root]
     for sub_ast in ast.subtrees:
         sons_vars += find_all_vars(sub_ast)
     return list(set(sons_vars))
 
+
 def solve(formulas):
     s = Solver()
     s.add(formulas)
-    if s.check() == sat :
+    if s.check() == sat:
         return s.model()
-    
+
+
 def encode_expr(ast, env):
     global generated_div_non_zero_div_cond 
     if ast.root == 'id':
@@ -80,37 +92,43 @@ def encode_expr(ast, env):
     else:
         raise SyntaxError
 
+
 def get_wp(ast, Q, linv):
     if ast.root == ';':
         def concat_lambda(e):
-            wp_second = get_wp(ast.subtrees[1], Q, linv)   # assert a==2
-            wp_first = get_wp(ast.subtrees[0], wp_second, linv) # a := 1
+            wp_second = get_wp(ast.subtrees[1], Q, linv)  # assert a==2
+            wp_first = get_wp(ast.subtrees[0], wp_second, linv)  # a := 1
             return wp_first(e)
+
         return concat_lambda
-    
+
     elif ast.root == 'skip':
         return Q
-    
+
     elif ast.root == ":=":
         def assignment_lambda(e):
             var_name = ast.subtrees[0].subtrees[0].root
             right = ast.subtrees[1]
+
+
             expr, zero_div = encode_expr(right, e)
             return  And(zero_div,Q(upd(e, var_name, expr)))
+
         return assignment_lambda
-    
+
     elif ast.root == 'if':
         def if_lambda(e):
             wp_then = get_wp(ast.subtrees[1], Q, linv)
             wp_else = get_wp(ast.subtrees[2], Q, linv)
             cond, zero_div  = encode_expr(ast.subtrees[0], e)
             return And(zero_div,Or(And(cond, wp_then(e)), And(Not(cond),wp_else(e))))
+
         return if_lambda
-    
+
     elif ast.root == 'while':
         def lambda_while(e):
-            
-            new_env = mk_env(list(e.keys() ))
+
+            new_env = mk_env(list(e.keys()))
             unassigned_vars = [v for v in e.keys() if v not in get_assigned_vars(ast)]
             for var in unassigned_vars:
                 new_env = upd(new_env, var, e[var])
@@ -128,15 +146,16 @@ def get_wp(ast, Q, linv):
                     Implies(Not(first_cond), Q(e)),
                     first_zero_div)
         return lambda_while
-    
+
     elif ast.root == 'assert':
         def lambda_assert(e):
             expr, zero_div = encode_expr(ast.subtrees[0], e)
             return And(zero_div, expr, Q(e))
+
         return lambda_assert
-    
-    
-    
+
+
+
 
 def verify(P, ast, Q, linv=None):
     """
@@ -162,35 +181,37 @@ def verify(P, ast, Q, linv=None):
 
 
 def get_id_ast(name):
-    return adt.tree.Tree('id',[
-        adt.tree.Tree(name,[])])
+    return adt.tree.Tree('id', [
+        adt.tree.Tree(name, [])])
 
 
-def find_and_replace_holes(tree, new_names : list):
-    if tree.root=='??':
-            new_name = f'hole{len(new_names)}'
-            new_names.append(new_name)
-            return get_id_ast(new_name)
+def find_and_replace_holes(tree, new_names: list):
+    if tree.root == '??':
+        new_name = f'hole{len(new_names)}'
+        new_names.append(new_name)
+        return get_id_ast(new_name)
     for i, subtree in enumerate(tree.subtrees):
         tree.subtrees[i] = find_and_replace_holes(subtree, new_names)
     return tree
 
 
-def replace_holes_with_sol(tree, hole_names, sol, env):
-    if tree.root=='id' and tree.leaves[0].root in hole_names:
-            name = tree.leaves[0].root
-            return adt.tree.Tree(sol.eval(env[name]),[])
-    for i, subtree in enumerate(tree.subtrees):
-        tree.subtrees[i] = replace_holes_with_sol(subtree, hole_names, sol, env)
-    return tree
+def replace_holes_with_sol(program, hole_names, sol, env):
+    # Input string and list
+    replacement_list = [str(sol.eval(env[hole])) for hole in hole_names]
+    replacement_list = ['0' if x.startswith("hole") else x for x in replacement_list] # default value for all unbonded holes
+    # Use string formatting to replace "??" with list values
+    fixed_program = program.replace("??", "{}").format(*replacement_list)
+    print(fixed_program)
+    return fixed_program
+
 
 def unroll(while_ast, num=7):
     cond = while_ast.subtrees[0]
     body = while_ast.subtrees[1]
 
-    root = adt.tree.Tree("if", [cond, adt.tree.Tree(';',[body, while_ast]), adt.tree.Tree("skip", [])])
-    for i in range(num-1):
-        root = adt.tree.Tree("if", [cond, adt.tree.Tree(';',[body, root]), adt.tree.Tree("skip", [])]) 
+    root = adt.tree.Tree("if", [cond, adt.tree.Tree(';', [body, while_ast]), adt.tree.Tree("skip", [])])
+    for i in range(num - 1):
+        root = adt.tree.Tree("if", [cond, adt.tree.Tree(';', [body, root]), adt.tree.Tree("skip", [])])
     return root
     """
     while 1<10 do i+=1
@@ -200,12 +221,13 @@ def unroll(while_ast, num=7):
     if i<10 then i+=1 else skip
     while 1<10 do i+=1
     """
-    adt.tree.Tree(';',[
-        adt.tree.Tree(name,[])])
+    adt.tree.Tree(';', [
+        adt.tree.Tree(name, [])])
+
 
 def preProcess(ast):
-    if ast.root=='while':
-            return unroll(ast)
+    if ast.root == 'while':
+        return unroll(ast)
     for i, subtree in enumerate(ast.subtrees):
         ast.subtrees[i] = preProcess(subtree)
     return ast
@@ -213,15 +235,17 @@ def preProcess(ast):
 
 def find_sol(P, ast, Q, linv, env, original_names):
     wp = get_wp(ast, Q, linv)
-    sol = solve([ForAll([env[ n] for n in original_names], Implies(P(env), wp(env)))])
+    sol = solve([ForAll([env[n] for n in original_names], Implies(P(env), wp(env)))])
     return sol
 
-def create_first_phase(orig_names,hole_names,i):
-    f= lambda name, e: e[name]
+
+def create_first_phase(orig_names, hole_names, i):
+    f = lambda name, e: e[name]
     possible_hole_expr = []
     for hole_name in hole_names:
-        possible_hole_expr.append([partial(f,name) for name in orig_names] + [lambda e: Int(f'{hole_name}_{i}')])
+        possible_hole_expr.append([partial(f, name) for name in orig_names] + [lambda e: Int(f'{hole_name}_{i}')])
     return tuple(product(*possible_hole_expr))
+
 
 def div_phase(val1, val2, e):
     global generated_div_non_zero_div_cond
@@ -229,70 +253,103 @@ def div_phase(val1, val2, e):
     generated_div_non_zero_div_cond[0] = And(under != 0, generated_div_non_zero_div_cond[0])
     return val1(e) / val2(e)
 
+
 def create_next_phase(past_phase, orig_names, hole_name, phase_num):
     phase = []
     for vals1 in past_phase:
         for vals2 in create_first_phase(orig_names, hole_name, phase_num):
             phase.append(tuple(map(lambda vals:
-                                   partial(lambda val1, val2, e:val1(e) + val2(e),vals[0],vals[1]), 
+                                   partial(lambda val1, val2, e: val1(e) + val2(e), vals[0], vals[1]),
                                    zip(vals1, vals2)))
-                )
+                         )
             phase.append(tuple(map(lambda vals:
-                                   partial(lambda val1, val2, e:val1(e) -val2(e),vals[0],vals[1]), 
+                                   partial(lambda val1, val2, e: val1(e) - val2(e), vals[0], vals[1]),
                                    zip(vals1, vals2)))
-                )
+                         )
             phase.append(tuple(map(lambda vals:
-                                   partial(lambda val1, val2, e:val1(e) * val2(e),vals[0],vals[1]), 
+                                   partial(lambda val1, val2, e: val1(e) * val2(e), vals[0], vals[1]),
                                    zip(vals1, vals2)))
+
                 )
             phase.append(tuple(map(lambda vals:
                                    partial(div_phase,vals[0],vals[1]), 
                                    zip(vals1, vals2)))
                 )
+
             # phase.append(partial(lambda val1, val2, e:val1(e) / val2(e),val1,val2))
     return phase
 
-def gen_holes(P, ast, Q, linv):
-    
+
+def gen_holes(P, ast, Q, linv, program, withExprs = True):
     original_names = find_all_vars(ast)
     hole_names = []
     ast = find_and_replace_holes(ast, hole_names)
     ast = preProcess(ast)
-    env = mk_env(original_names+hole_names)
+
+    env = mk_env(original_names + hole_names)
+
     sol = None
 
-    
-    current_phase = create_first_phase(original_names,hole_names,0)
+    current_phase = create_first_phase(original_names, hole_names, 0)
     i = 0
     phase_num = 0
-    while sol is None:
-        if i == len(current_phase):
-            i=0
-            phase_num += 1
-            current_phase = create_next_phase(current_phase, original_names,hole_names, phase_num)
-        env = mk_env(original_names+hole_names)
-        for hole, val in zip(hole_names,current_phase[i]):
-            env[hole] = val
+    while sol is None and phase_num < 10:
+        env = mk_env(original_names + hole_names)
+        if withExprs:
+            if i == len(current_phase):
+                i = 0
+                phase_num += 1
+                current_phase = create_next_phase(current_phase, original_names, hole_names, phase_num)
+
+            for hole, val in zip(hole_names, current_phase[i]):
+                env[hole] = val
+
         sol = find_sol(P, ast, Q, linv, env, original_names)
-        i+=1   
+        i += 1
+        if not withExprs: # if no expr and sol not found on first time there is no sol
+            break
+    if sol is None and withExprs:
+        return "timeout"
+    if sol is None and not withExprs:
+        return "solution can't be found"
     for hole in hole_names:
         print(f'\n{hole} = {sol.eval(env[hole])}\n')
     if sol is not None:
         print("there is an assignment:")
         print(sol)
-        return replace_holes_with_sol(ast, hole_names, sol, env)
+        return replace_holes_with_sol(program, hole_names, sol, env)
     else:
         print("i cant fill your holes")
         return False
 
-def synthesize(program, inputs, outputs):
-    return "sol"
 
-    
+def synthesize(program, inputs, outputs, withExprs = True):
+    P = lambda d: And(*[d[k] == v for k, v in inputs.items()])
+    Q = lambda d: And(*[d[k] == v for k, v in outputs.items()])
+    linv = lambda d: True
+
+    ast = WhileParser()(program)
+    P({"x":3})
+    fixed_program = gen_holes(P, ast, Q, linv, program, withExprs)
+    return fixed_program
+
+def synthesizeAndVerify(program, inputs, outputs, P, Q, linv, withExprs = True):
+    inp = lambda d: And(*[d[k] == v for k, v in inputs.items()])
+    out = lambda d: And(*[d[k] == v for k, v in outputs.items()])
+    ast = WhileParser()(program)
+    inp({"x": 3})
+    fixed_program = gen_holes(inp, ast, out, linv, program, withExprs)
+    new_ast = WhileParser()(fixed_program)
+    if new_ast:
+        verify_result = verify(P, new_ast, Q, linv=linv)
+        return (fixed_program, verify_result)
+    return (fixed_program, False)
+
+
+
 
 
 if __name__ == '__main__':
-
 
     # example program
     pvars = ['a', 'b', 'i', 'n']
@@ -305,14 +362,15 @@ if __name__ == '__main__':
     assert a = 1
     '''
 
+
     program = '''
     a := ?? ;
     assert a = (10 / c )
     '''
     P = lambda d: d['c'] != 0
+
     Q = lambda d: True
     linv = lambda d: True
-
 
     # # example program
     # pvars = ['a', 'b', 'i', 'n']

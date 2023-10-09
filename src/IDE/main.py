@@ -5,6 +5,7 @@ from PyQt5.QtGui import QFontDatabase, QTextCursor, QFont
 from PyQt5.QtCore import Qt, QTimer
 from while_lang.wp import getVars, synthesize
 
+
 class CodeEditor(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -129,10 +130,12 @@ class CodeEditor(QMainWindow):
 
     def toggle_table(self):
         if self.scroll_area.isVisible():
-            synthesize()
+            code_base = self.text_edit.toPlainText()
+            inputs, outputs = self.table_widget.collect_table_values()
+            result = synthesize(code_base, inputs, outputs )
+            self.text_edit.setPlainText(result)
             self.scroll_area.hide()
         else:
-            print(self.text_edit.toPlainText())
             try:
                 programs_vars = getVars(self.text_edit.toPlainText())
             except:
@@ -140,7 +143,7 @@ class CodeEditor(QMainWindow):
                 return
             self.buildTable(varNames=programs_vars)
             self.scroll_area.show()
-            self.table_widget = CustomTableWidget(programs_vars)
+
 
     def show_error_message(self, message):
         self.error_message.setText(message)
@@ -195,7 +198,7 @@ class LineNumberArea(QWidget):
 class CustomTableWidget(QTableWidget):
     def __init__(self, row_headers):
         super().__init__(len(row_headers), 2)  # Two columns for "INPUT" and "OUTPUT"
-
+        self._values = {r: {0:{}, 1:{}} for r in range(len(row_headers))}
         # Set size policy to minimum
         self.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Minimum)
         # Set background color and border style for the table
@@ -228,7 +231,28 @@ class CustomTableWidget(QTableWidget):
         self.resizeRowsToContents()
         self.resizeColumnsToContents()
 
+        self.itemChanged.connect(self.log_change)
 
+    def log_change(self, item):
+        row = item.row()
+        col = item.column()
+        self._values[row].update({col: item.text()})
+
+
+    def collect_table_values(self):
+        input_values = {}
+        output_values = {}
+
+        for row in range(self.rowCount()):
+            row_header = self.verticalHeaderItem(row).text()
+
+            input_value = self._values[row][0]
+            output_value = self._values[row][1]
+            if input_value and output_value:
+                input_values[row_header] = input_value
+                output_values[row_header] = output_value
+
+        return input_values, output_values
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
