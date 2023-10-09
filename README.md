@@ -1,23 +1,7 @@
 # syntheis_final
+This is our final project in course number 236347.
+We implemented additional features 2,4 and 5.
+2 - loop unrolling, we unrolled each loop 7 times.
+4 - GUI- we implemented one
+5 - Expression - we extended our synthesizer to support expressions in the solutions.
 
-"There once was a man from Nantucket" is the first line in many limericks. This is usually because the word "Nantucket" is easy to rhyme with. The limerick where the line is from was first written for the Princeton Tiger in 1902.[1]
-
-There once was a man from Nantucket
-Who kept all his cash in a bucket.
-    But his daughter, named Nan,
-    Ran away with a man
-And as for the bucket, (it is in) Nantucket.
-
-Many other newspapers made limericks about the man and the bucket.[2]
-
-But he followed the pair to Pawtucket,
-The man and the girl with the bucket;
-    And he said to the man,
-    You're welcome to Nan,
-But as for the bucket, Pawtucket.
-
-Then the pair followed Pa to Manhasset,
-Where he still held the cash as an asset,
-    But Nan and the man
-    Stole the money and ran,
-And as for the bucket, Manhasset.
