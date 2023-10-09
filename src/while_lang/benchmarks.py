@@ -1,6 +1,6 @@
 import unittest
 
-from z3 import And
+from z3 import And, simplify, Implies, Or
 
 from wp import synthesize, synthesizeAndVerify
 
@@ -110,8 +110,8 @@ class Feature1WithVer(unittest.TestCase):
         P = lambda d: d['y'] > 0
         Q = lambda d: True
         linv = lambda d: d['y'] > 0
-        (new_prog, res) = synthesizeAndVerify(program, {}, {"y": -1}, P, Q, linv, False)
-        self.assertEqual("y := -1 ; while y > 0 do  y := y + 1", new_prog)
+        (new_prog, res) = synthesizeAndVerify(program, {}, {"y": -5}, P, Q, linv, False)
+        self.assertEqual("y := -5 ; while y > 0 do  y := y + 1", new_prog)
         self.assertEqual(True, res)
 
 class Feature2NoVer(unittest.TestCase):
@@ -170,10 +170,151 @@ class Feature2NoVer(unittest.TestCase):
         program = '''a := ??;n:=2;while a >0 do (n:= n + 1; a:= a - 1);assert n=9;assert a = 0'''
         res = synthesize(program, {}, {}, False).strip()
         self.assertEqual('''a := 7;n:=2;while a >0 do (n:= n + 1; a:= a - 1);assert n=9;assert a = 0''', res)
+class AdditionalFeature2And5(unittest.TestCase):
+    def test_var(self):
+        program = '''a:=1  ; c:= ?? ; assert c=b'''
+        res = synthesize(program, {}, {}, True).strip()
+        self.assertEqual('a:=1  ; c:= b ; assert c=b', res)
+
+    def test_sum(self):
+        program = '''a:=1  ; c:= ?? ; assert c= (b + 1)'''
+        res = synthesize(program, {}, {}, True).strip()
+        self.assertIn(res, ['a:=1  ; c:= b + a ; assert c= (b + 1)', "a:=1  ; c:= 1 + b ; assert c= (b + 1)"] )
+
+    def test_mul(self):
+        program = '''a:=2  ; c:= ?? ; assert c= (b * 2)'''
+        res = synthesize(program, {}, {}, True).strip()
+        self.assertEqual('a:=2  ; c:= 2*b ; assert c= (b * 2)', res)
+
+    def test_div(self):
+        program = '''a:=x  ; c:= ?? ; assert c= (x / 2)'''
+        res = synthesize(program, {}, {}, True).strip()
+        self.assertIn(res, ['a:=x  ; c:= a/2 ; assert c= (x / 2)', 'a:=x  ; c:= x/2 ; assert c= (x / 2)'])
+
+    def test_if(self):
+        program = '''a:=??  ; if (a <1) then (c:=1) else (c:=2) ; assert c = 2'''
+        res = synthesize(program, {}, {}, True).strip()
+        self.assertEqual('a:=1  ; if (a <1) then (c:=1) else (c:=2) ; assert c = 2', res)
+
+    def test_if2(self):
+        program = '''a:=??  ; if (a != c) then (c:=1) else (c:=2) ; assert c = 2'''
+        res = synthesize(program, {}, {}, True).strip()
+        self.assertEqual('a:=c  ; if (a != c) then (c:=1) else (c:=2) ; assert c = 2', res)
+
+    def test_loop_unroll(self):
+
+        program = '''
+        b:=2;
+        d:=c;
+        while b >0 do (
+            d:= d + 1 ;
+            b:= b - 1);
+        a:= ?? ;
+        assert a = (d + 2)'''
+        res = synthesize(program, {}, {}, True).strip()
+
+        self.assertIn(''.join(res.split()), ["".join('''b:=2;
+        d:=c;
+        while b >0 do (
+            d:= d + 1 ;
+            b:= b - 1);
+        a:= 4 + c ;
+        assert a = (d + 2)'''.split()),
+                        "".join(
+                       '''b:=2;
+                       d:=c;
+                       while b >0 do (
+                           d:= d + 1 ;
+                           b:= b - 1);
+                       a:= 2 + d ;
+                       assert a = (d + 2)'''.split())
+                       ],)
+
+    def test_loop_unroll_cond(self):
+            program = '''
+            a:=c;
+            b:=??;
+            while b >0 do (
+                a:= a + 1 ;
+                b:= b - 1);
+            assert a = (c + 2)'''
+            res = synthesize(program, {}, {}, True).strip()
+            self.assertEqual('''a:=c;
+            b:=2;
+            while b >0 do (
+                a:= a + 1 ;
+                b:= b - 1);
+            assert a = (c + 2)''', res)
+
+    def test_loop_unroll_cond2(self):
+        program = '''a:=c;
+                b:=??;
+                while b >0 do (
+                    a:= a + 1 ;
+                    b:= b+ ??);
+                assert a = (c + 2)'''
+        res = synthesize(program, {}, {}, True).strip()
+        self.assertEqual('''a:=c;
+                b:=2;
+                while b >0 do (
+                    a:= a + 1 ;
+                    b:= b+ -1);
+                assert a = (c + 2)''', res)
+
+    def test_loop_unroll_cond3(self):
+            program = '''a:=c;
+                    b:=2;
+                    while b >0 do (
+                        a:= a + 1 ;
+                        b:= ??);
+                    assert a = (c + 2)'''
+            res = synthesize(program, {}, {}, True).strip()
+            self.assertEqual('''a:=c;
+                    b:=2;
+                    while b >0 do (
+                        a:= a + 1 ;
+                        b:= -1 + b);
+                    assert a = (c + 2)''', res)
+
+    def test_loop_unroll_cond4(self):
+            program = '''a:=c;
+                    b:=??;
+                    while b >0 do (
+                        a:= a + 1 ;
+                        b:= ??);
+                    assert a = (c + 2)'''
+            res = synthesize(program, {}, {}, True).strip()
+            self.assertEqual('''a:=c;
+                    b:=2;
+                    while b >0 do (
+                        a:= a + 1 ;
+                        b:= -1 + b);
+                    assert a = (c + 2)''', res)
+
+    def test_fib(self):
+        #"a:=1; b:= 1; i := 0 ; n:= 5" \
+                  #" while i < n do ( tmp:= a; a := a + b; b:= tmp)"
+        program = "a:=1; b:= 1; i := 0 ; n:= 5;" \
+                  " while i < n do ( tmp:= ?? ; a := a + b; b:= tmp; i:= i + 1)"
+        new_prog = synthesize(program, {}, {"a": 13 }, True)
+        print(new_prog)
+        self.assertEqual("a:=1; b:= 1; i := 0 ; n:= 5;" \
+                  " while i < n do ( tmp:= a ; a := a + b; b:= tmp; i:= i + 1)", new_prog)
+
+    def test_fib_harder(self):
+        #"a:=1; b:= 1; i := 0 ; n:= 5" \
+                  #" while i < n do ( tmp:= a; a := a + b; b:= tmp)"
+        program = "a:=1; b:= 1; i := 0 ; n:= 5;" \
+                  " while i < n do ( tmp:= ?? ; a := a + b; b:= ??; i:= i + 1)"
+        new_prog = synthesize(program, {}, {"a": 13 }, True)
+        print(new_prog)
+        self.assertEqual("a:=1; b:= 1; i := 0 ; n:= 5;" \
+                  " while i < n do ( tmp:= a ; a := a + b; b:= tmp; i:= i + 1)", new_prog)
 
 class SynthFailed(unittest.TestCase):
     def test_numOfIterationsWhile2(self):
-        program = "i:=??; n:= 1; a := b - 1 ; while i < n do ( a := a + 1 ; i := i + 1 )"
+        program = "i:=??; n:= 1; a := b - 1 ;" \
+                  " while i < n do ( a := a + 1 ; i := i + 1 )"
         new_prog = synthesize(program, {}, {"n": 0}, False)
         print(new_prog)
         self.assertEqual("solution can't be found", new_prog)

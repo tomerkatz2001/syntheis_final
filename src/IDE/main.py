@@ -132,6 +132,7 @@ class CodeEditor(QMainWindow):
         if self.scroll_area.isVisible():
             code_base = self.text_edit.toPlainText()
             inputs, outputs = self.table_widget.collect_table_values()
+            print( inputs, outputs)
             result = synthesize(code_base, inputs, outputs )
             self.text_edit.setPlainText(result)
             self.scroll_area.hide()
