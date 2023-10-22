@@ -1,5 +1,5 @@
 # syntheis_final
-This is our final project in course number 236347.
+This is our (212101745-212234140) final project in course number 236347.
 To instal the dependecies please run:
     
       pip install -r requirements.txt
