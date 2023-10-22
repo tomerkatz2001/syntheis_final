@@ -15,9 +15,9 @@ Note: we supplied benchmarks. they can be found in the  src/while_lang/benchmark
 
 
 ![alt text](https://github.com/tomerkatz2001/syntheis_final/blob/main/WhatsApp%20Image%202023-10-09%20at%2019.24.23_8db0b043.jpg?raw=true)
-
+### with input-output examples:
 ![alt text](https://github.com/tomerkatz2001/syntheis_final/blob/main/WhatsApp%20Image%202023-10-09%20at%2019.24.51_59b6abb7.jpg?raw=true)
-
+### with assertions:
 ![alt text](https://github.com/tomerkatz2001/syntheis_final/blob/main/WhatsApp%20Image%202023-10-09%20at%2019.37.40_328ef43e.jpg?raw=true)
 
 
